@@ -57,6 +57,7 @@ struct Qdisc {
 				      * Its true for MQ/MQPRIO slaves, or non
 				      * multiqueue device.
 				      */
+#define TCQ_F_QFQ_RL		0x20
 #define TCQ_F_WARN_NONWC	(1 << 16)
 	int			padded;
 	const struct Qdisc_ops	*ops;
@@ -99,6 +100,8 @@ static inline bool qdisc_is_running(const struct Qdisc *qdisc)
 
 static inline bool qdisc_run_begin(struct Qdisc *qdisc)
 {
+	if (qdisc->flags & TCQ_F_QFQ_RL)
+		return false;
 	if (qdisc_is_running(qdisc))
 		return false;
 	qdisc->__state |= __QDISC___STATE_RUNNING;

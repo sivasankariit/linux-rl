@@ -2081,6 +2081,8 @@ static inline void __netif_reschedule(struct Qdisc *q)
 
 void __netif_schedule(struct Qdisc *q)
 {
+	if (q->flags & TCQ_F_QFQ_RL)
+		return;
 	if (!test_and_set_bit(__QDISC_STATE_SCHED, &q->state))
 		__netif_reschedule(q);
 }
@@ -2608,7 +2610,7 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 				 struct netdev_queue *txq)
 {
 	spinlock_t *root_lock = qdisc_lock(q);
-	bool contended;
+	bool contended = false;
 	int rc;
 
 	qdisc_pkt_len_init(skb);
@@ -2618,12 +2620,17 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 	 * separate lock before trying to get qdisc main lock.
 	 * This permits __QDISC_STATE_RUNNING owner to get the lock more often
 	 * and dequeue packets faster.
+	 *
+	 * If the qdisc is handling locking then skip
+	 * this altogether.
 	 */
-	contended = qdisc_is_running(q);
-	if (unlikely(contended))
-		spin_lock(&q->busylock);
+	if (!(q->flags & TCQ_F_QFQ_RL)) {
+		contended = qdisc_is_running(q);
+		if (unlikely(contended))
+			spin_lock(&q->busylock);
 
-	spin_lock(root_lock);
+		spin_lock(root_lock);
+	}
 	if (unlikely(test_bit(__QDISC_STATE_DEACTIVATED, &q->state))) {
 		kfree_skb(skb);
 		rc = NET_XMIT_DROP;
@@ -2660,9 +2667,11 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 			__qdisc_run(q);
 		}
 	}
-	spin_unlock(root_lock);
-	if (unlikely(contended))
-		spin_unlock(&q->busylock);
+	if (!(q->flags & TCQ_F_QFQ_RL)) {
+		spin_unlock(root_lock);
+		if (unlikely(contended))
+			spin_unlock(&q->busylock);
+	}
 	return rc;
 }
 
@@ -3201,7 +3210,12 @@ static void net_tx_action(struct softirq_action *h)
 			head = head->next_sched;
 
 			root_lock = qdisc_lock(q);
-			if (spin_trylock(root_lock)) {
+			if (q->flags & TCQ_F_QFQ_RL) {
+				smp_mb__before_clear_bit();
+				clear_bit(__QDISC_STATE_SCHED,
+					  &q->state);
+				__qdisc_run(q);
+			} else if (spin_trylock(root_lock)) {
 				smp_mb__before_clear_bit();
 				clear_bit(__QDISC_STATE_SCHED,
 					  &q->state);
@@ -3256,10 +3270,12 @@ static int ing_filter(struct sk_buff *skb, struct netdev_queue *rxq)
 
 	q = rxq->qdisc;
 	if (q != &noop_qdisc) {
-		spin_lock(qdisc_lock(q));
+		if (!(q->flags & TCQ_F_QFQ_RL))
+			spin_lock(qdisc_lock(q));
 		if (likely(!test_bit(__QDISC_STATE_DEACTIVATED, &q->state)))
 			result = qdisc_enqueue_root(skb, q);
-		spin_unlock(qdisc_lock(q));
+		if (!(q->flags & TCQ_F_QFQ_RL))
+			spin_unlock(qdisc_lock(q));
 	}
 
 	return result;
