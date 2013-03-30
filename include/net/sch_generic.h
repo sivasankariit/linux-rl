@@ -690,9 +690,9 @@ static inline u64 psched_l2t_ns(const struct psched_ratecfg *r,
 	return ((u64)len * r->mult) >> r->shift;
 }
 
-extern void psched_ratecfg_precompute(struct psched_ratecfg *r, u32 rate);
+extern void psched_ratecfg_precompute(struct psched_ratecfg *r, u64 rate);
 
-static inline u32 psched_ratecfg_getrate(const struct psched_ratecfg *r)
+static inline u64 psched_ratecfg_getrate(const struct psched_ratecfg *r)
 {
 	return r->rate_bps >> 3;
 }
