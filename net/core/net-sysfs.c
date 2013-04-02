@@ -334,6 +334,22 @@ static ssize_t store_group(struct device *dev, struct device_attribute *attr,
 	return netdev_store(dev, attr, buf, len, change_group);
 }
 
+NETDEVICE_SHOW(gso_max_size, fmt_udec);
+
+static int change_gso_max_size(struct net_device *net, unsigned long new_size)
+{
+	netif_set_gso_max_size(net, (unsigned int) new_size);
+	return 0;
+}
+
+static ssize_t store_gso_max_size(struct device *dev,
+				  struct device_attribute *attr,
+				  const char *buf, size_t len)
+{
+	return netdev_store(dev, attr, buf, len, change_gso_max_size);
+}
+
+
 static struct device_attribute net_class_attributes[] = {
 	__ATTR(addr_assign_type, S_IRUGO, show_addr_assign_type, NULL),
 	__ATTR(addr_len, S_IRUGO, show_addr_len, NULL),
@@ -355,6 +371,8 @@ static struct device_attribute net_class_attributes[] = {
 	__ATTR(tx_queue_len, S_IRUGO | S_IWUSR, show_tx_queue_len,
 	       store_tx_queue_len),
 	__ATTR(netdev_group, S_IRUGO | S_IWUSR, show_group, store_group),
+	__ATTR(gso_max_size, S_IRUGO | S_IWUSR, show_gso_max_size,
+	       store_gso_max_size),
 	{}
 };
 
